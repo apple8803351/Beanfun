@@ -40,7 +40,7 @@ namespace Beanfun
 
         private CookieContainer CookieContainer; //存Cookie的容器
 
-        private Uri ResponseUri; 
+        private Uri ResponseUri;
         private bool redirect; //是否自動導向
         private string webtoken; //beanfun認證的cookie
 
@@ -55,7 +55,7 @@ namespace Beanfun
         {
             this.CookieContainer = new System.Net.CookieContainer();
             this.Headers.Set("User-Agent", userAgent);
-            
+
             this.ResponseUri = null;
             this.redirect = true;
             this.webtoken = null;
@@ -66,6 +66,7 @@ namespace Beanfun
         public string GetSessionkey()
         {
             string response = this.DownloadString("https://tw.beanfun.com/beanfun_block/bflogin/default.aspx?service=999999_T0");
+
             response = this.ResponseUri.ToString();
 
             if (response == null)
@@ -94,22 +95,18 @@ namespace Beanfun
         /// <param name="service_region"></param>
         public void Login(string account, string password, string service_code, string service_region)
         {
-            string response = "";
-
-            string sessionKey = this.GetSessionkey();
-
-            if(sessionKey == null)
-            {
-                return;
-            }
-
             try
             {
+                string response = "";
+
+                string sessionKey = this.GetSessionkey();
+
+                if (sessionKey == null)
+                {
+                    return;
+                }
+
                 response = this.DownloadString("https://tw.newlogin.beanfun.com/login/id-pass_form.aspx?skey=" + sessionKey);
-
-                Debug.WriteLine("HI:" + response);
-
-                Debug.WriteLine("HIEND");
 
                 //拿取VIEWSTATE
                 Regex regex = new Regex("id=\"__VIEWSTATE\" value=\"(.*)\" />");
@@ -191,14 +188,12 @@ namespace Beanfun
             {
                 if (error is WebException)
                 {
-                    this.errorMessage = "網路連線錯誤，請檢查官方網站連線是否正常。\n\n" + error.Message;
+                    this.errorMessage = "網路連線錯誤，請檢查網路連線是否正常。";
                 }
                 else
                 {
                     this.errorMessage = "LoginUnknown\n\n" + error.Message + "\n" + error.StackTrace;
                 }
-
-                response = error.ToString();
             }
         }
 
@@ -211,47 +206,56 @@ namespace Beanfun
         /// <returns>解密後的密碼</returns>
         public string getOTP(Account account, string service_code, string service_region)
         {
-            string response;
-          
-            response = this.DownloadString("https://tw.beanfun.com/beanfun_block/auth.aspx?channel=game_zone&page_and_query=game_start_step2.aspx%3Fservice_code%3D" + service_code + "%26service_region%3D" + service_region + "%26sotp%3D" + account.sotp + "&web_token=" + this.webtoken);
-
-            Regex regex = new Regex("GetResultByLongPolling&key=(.*)\"");
-           
-            string longPollingKey = regex.Match(response).Groups[1].Value;
-
-            if (account.screatetime == null)
+            try
             {
-                regex = new Regex("ServiceAccountCreateTime: \"([^\"]+)\"");
-                
-                account.screatetime = regex.Match(response).Groups[1].Value;
+                string response;
+
+                response = this.DownloadString("https://tw.beanfun.com/beanfun_block/auth.aspx?channel=game_zone&page_and_query=game_start_step2.aspx%3Fservice_code%3D" + service_code + "%26service_region%3D" + service_region + "%26sotp%3D" + account.sotp + "&web_token=" + this.webtoken);
+
+                Regex regex = new Regex("GetResultByLongPolling&key=(.*)\"");
+
+                string longPollingKey = regex.Match(response).Groups[1].Value;
+
+                if (account.screatetime == null)
+                {
+                    regex = new Regex("ServiceAccountCreateTime: \"([^\"]+)\"");
+
+                    account.screatetime = regex.Match(response).Groups[1].Value;
+                }
+                response = this.DownloadString("https://tw.newlogin.beanfun.com/generic_handlers/get_cookies.ashx", Encoding.UTF8);
+
+                //拿取秘密編碼
+                regex = new Regex("var m_strSecretCode = '(.*)';");
+
+                string secretCode = regex.Match(response).Groups[1].Value;
+
+                NameValueCollection payload = new NameValueCollection();
+                payload.Add("service_code", service_code);
+                payload.Add("service_region", service_region);
+                payload.Add("service_account_id", account.sacc);
+                payload.Add("service_sotp", account.sotp);
+                payload.Add("service_display_name", account.sname);
+                payload.Add("service_create_time", account.screatetime);
+
+                //不知用意
+                System.Net.ServicePointManager.Expect100Continue = false;
+                response = Encoding.UTF8.GetString(this.UploadValues("https://tw.new.beanfun.com/beanfun_block/generic_handlers/record_service_start.ashx", payload));
+
+                response = this.DownloadString("https://tw.new.beanfun.com/generic_handlers/get_result.ashx?meth=GetResultByLongPolling&key=" + longPollingKey + "&_=" + GetCurrentTime());
+                response = this.DownloadString("https://tw.new.beanfun.com/beanfun_block/generic_handlers/get_webstart_otp.ashx?SN=" + longPollingKey + "&WebToken=" + this.webtoken + "&SecretCode=" + secretCode + "&ppppp=FE40250C435D81475BF8F8009348B2D7F56A5FFB163A12170AD615BBA534B932&ServiceCode=" + service_code + "&ServiceRegion=" + service_region + "&ServiceAccount=" + account.sacc + "&CreateTime=" + account.screatetime.Replace(" ", "%20"));
+                response = response.Substring(2);
+                string key = response.Substring(0, 8); //取得鑰匙
+                string plain = response.Substring(8); //取得密碼
+                string otp = DecryptDES(plain, key); //用鑰匙把密碼做DES解密
+
+                return otp;
             }
-            response = this.DownloadString("https://tw.newlogin.beanfun.com/generic_handlers/get_cookies.ashx", Encoding.UTF8);
-
-            //拿取秘密編碼
-            regex = new Regex("var m_strSecretCode = '(.*)';");
-
-            string secretCode = regex.Match(response).Groups[1].Value;
-
-            NameValueCollection payload = new NameValueCollection();
-            payload.Add("service_code", service_code);
-            payload.Add("service_region", service_region);
-            payload.Add("service_account_id", account.sacc);
-            payload.Add("service_sotp", account.sotp);
-            payload.Add("service_display_name", account.sname);
-            payload.Add("service_create_time", account.screatetime);
+            catch(Exception error)
+            {
+                this.errorMessage = "獲取密碼失敗，請嘗試重新登入。";
+                return null;
+            }
             
-            //不知用意
-            System.Net.ServicePointManager.Expect100Continue = false;
-            response = Encoding.UTF8.GetString(this.UploadValues("https://tw.new.beanfun.com/beanfun_block/generic_handlers/record_service_start.ashx", payload));
-
-            response = this.DownloadString("https://tw.new.beanfun.com/generic_handlers/get_result.ashx?meth=GetResultByLongPolling&key=" + longPollingKey + "&_=" + GetCurrentTime());
-            response = this.DownloadString("https://tw.new.beanfun.com/beanfun_block/generic_handlers/get_webstart_otp.ashx?SN=" + longPollingKey + "&WebToken=" + this.webtoken + "&SecretCode=" + secretCode + "&ppppp=FE40250C435D81475BF8F8009348B2D7F56A5FFB163A12170AD615BBA534B932&ServiceCode=" + service_code + "&ServiceRegion=" + service_region + "&ServiceAccount=" + account.sacc + "&CreateTime=" + account.screatetime.Replace(" ", "%20"));
-            response = response.Substring(2);
-            string key = response.Substring(0, 8); //取得鑰匙
-            string plain = response.Substring(8); //取得密碼
-            string otp = DecryptDES(plain, key); //用鑰匙把密碼做DES解密
-            
-            return otp;
         }
 
         //把拿到的 OTP 和 KEY 做DES解碼
@@ -332,9 +336,17 @@ namespace Beanfun
         /// <returns></returns>
         protected override WebResponse GetWebResponse(WebRequest request)
         {
-            WebResponse webResponse = base.GetWebResponse(request);
-            this.ResponseUri = webResponse.ResponseUri; //這邊可能是怕跳轉，所以紀錄跳轉後的網址 後續可以拿skey
-            return webResponse;
+            try
+            {
+                WebResponse webResponse = base.GetWebResponse(request);
+                this.ResponseUri = webResponse.ResponseUri; //這邊可能是怕跳轉，所以紀錄跳轉後的網址 後續可以拿skey
+                return webResponse;
+            }
+            catch(Exception error)
+            {
+                return null;
+            }
+            
         }
 
         /// <summary>
@@ -345,6 +357,7 @@ namespace Beanfun
         protected override WebRequest GetWebRequest(Uri address)
         {
             WebRequest webRequest = base.GetWebRequest(address);
+            webRequest.Timeout = 1000;
             HttpWebRequest httpRequest = webRequest as HttpWebRequest;
 
             if (httpRequest != null)
@@ -370,14 +383,32 @@ namespace Beanfun
             }
         }
 
-        public void Ping()
+        public string Ping()
         {
-            byte[] buffer = null;
+            try
+            {
+                byte[] buffer = null;
 
-            buffer = this.DownloadData("http://tw.beanfun.com/beanfun_block/generic_handlers/echo_token.ashx?webtoken=1");
-            string response = Encoding.GetString(buffer);
+                buffer = this.DownloadData("http://tw.beanfun.com/beanfun_block/generic_handlers/echo_token.ashx?webtoken=1");
+                string response = Encoding.GetString(buffer);
 
-            Debug.WriteLine(GetCurrentTime() + " @ " + response); //顯示ping的資訊
+                Debug.WriteLine(GetCurrentTime() + " @ " + response); //顯示ping的資訊
+
+                return "OK";
+            }
+            catch(Exception error)
+            {
+                if (error is WebException)
+                {
+                    this.errorMessage = "網路連線錯誤，請檢查官方網站連線是否正常。\n\n" + error.Message;
+                }
+                else
+                {
+                    this.errorMessage = "LoginUnknown\n\n" + error.Message + "\n" + error.StackTrace;
+                }
+
+                return null;
+            }
         }
     }
 }

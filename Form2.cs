@@ -59,19 +59,46 @@ namespace Beanfun
             }
         }
 
-        private void otp_button_Click(object sender, EventArgs e)
+        private void showError(string message, bool isExit = false)
         {
-            //如果pingWorer正在運作 則停止pingWorker
-            if (this.pingWorker.IsBusy)
+            switch(message)
             {
-                this.pingWorker.CancelAsync();
+                default:
+                    break;
             }
 
-            otp_textBox.Text = "獲取密碼中...";
-            listView1.Enabled = false;
-            otp_button.Enabled = false;
+            MessageBox.Show(message);
 
-            getOtpWorker.RunWorkerAsync(listView1.SelectedItems[0].Index);
+            if (isExit)
+            {
+                this.Close();
+            }
+            else
+            {
+                beanfunClient.errorMessage = null;
+            }
+        }
+
+        private void otp_button_Click(object sender, EventArgs e)
+        {
+            if (listView1.SelectedItems.Count == 0)
+            {
+                MessageBox.Show("請點選帳號，否則無法獲取密碼！");
+            }
+            else
+            {
+                //如果pingWorer正在運作 則停止pingWorker
+                if (this.pingWorker.IsBusy)
+                {
+                    this.pingWorker.CancelAsync();
+                }
+
+                otp_textBox.Text = "獲取密碼中...";
+                listView1.Enabled = false;
+                otp_button.Enabled = false;
+
+                getOtpWorker.RunWorkerAsync(listView1.SelectedItems[0].Index);
+            }
         }
 
         //登出被按下的事件
@@ -105,9 +132,10 @@ namespace Beanfun
                     break;
                 }
 
-                if (beanfunClient != null)
+                if(beanfunClient.Ping() == null)
                 {
-                    beanfunClient.Ping();
+                    e.Result = "error";
+                    break;
                 }
 
                 for (int i = 0; i < waitSeconds; i++)
@@ -125,6 +153,11 @@ namespace Beanfun
         private void pingWorker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
             Debug.WriteLine("pingWoker end");
+            
+            if((string)e.Result == "error")
+            {
+                showError(beanfunClient.errorMessage, true);
+            }
         }
 
         private void getOtpWorker_DoWork(object sender, DoWorkEventArgs e)
@@ -138,26 +171,34 @@ namespace Beanfun
 
             int index = (int)e.Argument;
 
-            if (this.beanfunClient.accountList.Count <= index)
-            {
-                return;
-            }
-
             Debug.WriteLine("call GetOTP");
             otp = beanfunClient.getOTP(this.beanfunClient.accountList[index], this.service_code, this.service_region); //拿取開啟遊戲的密碼
             Debug.WriteLine("call GetOTP done");
+
+            if(otp != null)
+            {
+                e.Result = "OK";
+            }
         }
 
         private void getOtpWorker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
             Debug.WriteLine("getOtpWorker end");
 
-            otp_textBox.Text = this.otp;
+            if((string)e.Result == "OK")
+            {
+                otp_textBox.Text = this.otp;
 
-            listView1.Enabled = true;
-            otp_button.Enabled = true;
+                listView1.Enabled = true;
+                otp_button.Enabled = true;
+
+                this.pingWorker.RunWorkerAsync(); //拿完繼續ping
+            }
+            else
+            {
+                showError(beanfunClient.errorMessage, true);
+            }
             
-            this.pingWorker.RunWorkerAsync(); //拿完繼續ping
         }
 
         private void listView1_DoubleClick(object sender, EventArgs e)
