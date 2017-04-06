@@ -201,7 +201,7 @@ namespace Beanfun
             login_button.Text = "登入";
             login_button.Enabled = true;
 
-            this.UseWaitCursor = false; //讓視窗的Cursor回復成箭頭
+            this.UseWaitCursor = false; //讓視窗的Cursor恢復成箭頭
 
             if (beanfunClient.errorMessage != null) //如果beanfunClient有錯誤訊息則執行下面片段
             {
